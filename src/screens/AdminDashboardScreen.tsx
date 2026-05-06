@@ -38,18 +38,6 @@ import {
   LineChart, Line
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  getAllPatients,
-  getPatientFullHistory,
-  getAnalyticsDiseases,
-  getAnalyticsDailyVolume,
-  getAnalyticsTopMedicines,
-  getAnalyticsUnavailability,
-  updateInventoryItem,
-  getUnavailabilityLogs,
-  addAdminLog,
-  getInventory
-} from '../services/dbService';
 import { getAllSettings, setSetting } from '../services/settingsService';
 import { 
   sendCommand, 
@@ -67,167 +55,41 @@ import { sendQRCodeEmail } from '../services/emailService';
 import QRCode from 'qrcode';
 import { db } from '../lib/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-
-// --- Hardware Connection Modal ---
-const HardwareModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
-  const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>(getConnectionStatus() === 'connected' ? 'connected' : 'idle');
-  const [activeType, setActiveType] = useState<'usb' | 'bluetooth' | null>(getConnectionStatus() === 'connected' ? getHardwareConfig().type as any : null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    const unlisten = onConnectionStatus((newStatus, error) => {
-      setStatus(newStatus as any);
-      if (newStatus === 'connected') {
-        setActiveType(getHardwareConfig().type as any);
-      } else if (newStatus === 'idle') {
-        setActiveType(null);
-      }
-      
-      if (newStatus === 'error') {
-        setErrorMsg(error || 'Connection failed');
-      }
-    });
-    return () => unlisten();
-  }, []);
-
-  const handleUSBConnect = async () => {
-    setStatus('connecting');
-    const res = await requestWebSerialPort();
-    if (!res.success) {
-      setStatus('error');
-      setErrorMsg(res.error || 'Failed to select port');
-    }
-  };
-
-  const handleBluetoothConnect = async () => {
-    setStatus('connecting');
-    const res = await requestBluetoothDevice();
-    if (!res.success) {
-      setStatus('error');
-      setErrorMsg(res.error || 'Bluetooth selection failed');
-    }
-  };
-
-  const handleDisconnect = async () => {
-    await closeHardware();
-    setStatus('idle');
-    setActiveType(null);
-  };
-
-  if (!isOpen) return null;
-
-  const isUsbActive = status === 'connected' && activeType === 'usb';
-  const isBtActive = status === 'connected' && activeType === 'bluetooth';
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-brand-navy/90 backdrop-blur-md">
-      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-lg glass-card p-10 flex flex-col gap-8 relative overflow-hidden shadow-[0_0_50px_rgba(0,188,212,0.2)]">
-        <div className="flex justify-between items-center">
-          <div className="flex flex-col gap-1">
-            <h3 className="text-2xl font-black text-white uppercase tracking-tight">Hardware Control</h3>
-            <p className="text-text-secondary text-sm font-medium">Manage Robot communication Link</p>
-          </div>
-          <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
-            <X size={20} className="text-text-muted" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-6">
-          {/* USB Column */}
-          <div className="flex flex-col items-center gap-5 p-8 glass-card border-white/5 relative overflow-hidden">
-            <Usb size={48} className={isUsbActive ? 'text-brand-danger animate-pulse' : 'text-brand-primary'} />
-            <div className="flex flex-col items-center gap-1">
-              <span className="font-black text-white uppercase tracking-tighter text-lg">Serial Port</span>
-              <span className="text-[9px] font-bold text-text-muted uppercase tracking-[0.2em]">Wired Connection</span>
-            </div>
-            <button 
-              onClick={isUsbActive ? handleDisconnect : handleUSBConnect} 
-              disabled={status === 'connecting' || (status === 'connected' && !isUsbActive)} 
-              className={`w-full py-4 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all duration-500 ${isUsbActive ? 'bg-brand-danger/20 text-brand-danger border border-brand-danger/50 backdrop-blur-md shadow-[0_0_20px_rgba(255,82,82,0.2)]' : 'bg-brand-primary text-white shadow-[0_8px_20px_rgba(33,150,243,0.3)]'} ${(status === 'connected' && !isUsbActive) ? 'opacity-10 grayscale cursor-not-allowed' : ''}`}
-            >
-              {isUsbActive ? 'Disconnect' : 'Connect'}
-            </button>
-          </div>
-
-          {/* Bluetooth Column */}
-          <div className="flex flex-col items-center gap-5 p-8 glass-card border-white/5 relative overflow-hidden">
-            <Activity size={48} className={isBtActive ? 'text-brand-danger animate-pulse' : 'text-brand-secondary'} />
-            <div className="flex flex-col items-center gap-1">
-              <span className="font-black text-white uppercase tracking-tighter text-lg">HEALER BT</span>
-              <span className="text-[9px] font-bold text-text-muted uppercase tracking-[0.2em]">Wireless Link</span>
-            </div>
-            <button 
-              onClick={isBtActive ? handleDisconnect : handleBluetoothConnect} 
-              disabled={status === 'connecting' || (status === 'connected' && !isBtActive)} 
-              className={`w-full py-4 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all duration-500 ${isBtActive ? 'bg-brand-danger/20 text-brand-danger border border-brand-danger/50 backdrop-blur-md shadow-[0_0_20px_rgba(255,82,82,0.2)]' : 'bg-brand-secondary text-brand-navy shadow-[0_8px_20px_rgba(0,188,212,0.3)]'} ${(status === 'connected' && !isBtActive) ? 'opacity-10 grayscale cursor-not-allowed' : ''}`}
-            >
-              {isBtActive ? 'Disconnect' : 'Connect'}
-            </button>
-          </div>
-        </div>
-
-        {status === 'connecting' && (
-          <div className="flex items-center justify-center gap-3 py-4 text-brand-secondary">
-            <Loader2 className="animate-spin" size={24} />
-            <span className="font-bold uppercase tracking-widest text-xs animate-pulse">Processing...</span>
-          </div>
-        )}
-
-        {status === 'connected' && (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-center gap-3 py-4 text-brand-success bg-brand-success/10 rounded-xl border border-brand-success/30">
-              <CheckCircle2 size={24} />
-              <span className="font-bold uppercase tracking-widest text-xs">Active Connection</span>
-            </div>
-            <button onClick={onClose} className="w-full py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold uppercase tracking-widest text-xs transition-colors">
-              Continue to Dashboard
-            </button>
-          </div>
-        )}
-
-        {status === 'error' && (
-          <div className="flex flex-col gap-2 p-4 bg-brand-danger/10 border border-brand-danger/30 rounded-xl">
-            <div className="flex items-center gap-2 text-brand-danger">
-              <AlertCircle size={20} />
-              <span className="font-bold uppercase tracking-widest text-xs">System Error</span>
-            </div>
-            <p className="text-brand-danger/80 text-[10px] uppercase font-bold leading-tight">{errorMsg}</p>
-            <button onClick={() => setStatus('idle')} className="mt-2 text-white/40 hover:text-white text-[10px] uppercase font-bold tracking-widest">Clear & Retry</button>
-          </div>
-        )}
-      </motion.div>
-    </div>
-  );
-};
-
-// --- Tab Sub-Components ---
+import { HardwareModal } from '../components/HardwareModal';
 
 const CompartmentsTab = ({ inventory, setInventory, serialLog, setSerialLog }: any) => {
   const { t } = useAppContext();
-  const [statuses, setStatuses] = useState<Record<string, string>>({ 1: 'Closed', 2: 'Closed', 3: 'Closed', 4: 'Closed', 'FA': 'Closed' });
+  const [statuses, setStatuses] = useState<Record<string | number, string>>({ 1: 'Closed', 2: 'Closed', 3: 'Closed', 4: 'Closed', 'FA': 'Closed' });
   const [debugOpen, setDebugOpen] = useState(false);
   const [testCmd, setTestCmd] = useState('');
 
   useEffect(() => {
-    const unlisten = onMessage((msg) => {
+    const unsubscribe = onMessage((msg) => {
       const timestamp = new Date().toLocaleTimeString();
       setSerialLog((prev: any) => [{ timestamp, type: 'IN', msg }, ...prev].slice(0, 20));
       
-      if (msg.includes('ACK_OPEN')) {
+      if (msg.startsWith('ACK_OPEN')) {
         const parts = msg.split('_');
-        const key = parts[2] === 'FA' ? 'FA' : parseInt(parts[2]);
-        setStatuses(prev => ({ ...prev, [key]: 'Open' }));
+        const lastPart = parts[parts.length - 1];
+        if (lastPart === 'FA') {
+          setStatuses(prev => ({ ...prev, 'FA': 'Open' }));
+        } else {
+          const num = parseInt(lastPart);
+          if (!isNaN(num)) setStatuses(prev => ({ ...prev, [num]: 'Open' }));
+        }
       }
-      if (msg.includes('ACK_CLOSE')) {
+      if (msg.startsWith('ACK_CLOSE')) {
         const parts = msg.split('_');
-        const key = parts[2] === 'FA' ? 'FA' : parseInt(parts[2]);
-        setStatuses(prev => ({ ...prev, [key]: 'Closed' }));
+        const lastPart = parts[parts.length - 1];
+        if (lastPart === 'FA') {
+          setStatuses(prev => ({ ...prev, 'FA': 'Closed' }));
+        } else {
+          const num = parseInt(lastPart);
+          if (!isNaN(num)) setStatuses(prev => ({ ...prev, [num]: 'Closed' }));
+        }
       }
     });
-
-    return () => {
-      unlisten();
-    };
+    return () => unsubscribe();
   }, []);
 
   const handleOpen = (n: number) => {
@@ -464,21 +326,21 @@ const CompartmentsTab = ({ inventory, setInventory, serialLog, setSerialLog }: a
   );
 };
 
-const InventoryTab = ({ inventory, refreshInventory }: any) => {
+const InventoryTab = ({ inventory }: any) => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState<any>({});
   const unavailLogs = useLiveQuery(() => db.unavailability_log.toArray()) || [];
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    getUnavailabilityLogs().then(setUnavailLogs);
-  }, []);
-
   const handleSave = async (n: number) => {
     setLoading(true);
     const item = formData[n] || inventory.find((i: any) => i.compartment_number === n);
     
-    await updateInventoryItem(item.compartment_number, item.medicine_name, item.current_count);
+    if (item.id) {
+      await db.inventory.update(item.id, item);
+    } else {
+      await db.inventory.add(item);
+    }
 
     await db.admin_log.add({
       timestamp: new Date().toISOString(),
@@ -490,7 +352,6 @@ const InventoryTab = ({ inventory, refreshInventory }: any) => {
       const { [n]: _, ...rest } = prev;
       return rest;
     });
-    refreshInventory();
     setLoading(false);
   };
 
@@ -628,16 +489,24 @@ const InventoryTab = ({ inventory, refreshInventory }: any) => {
   );
 };
 
+const formatSafeDate = (dateStr: string) => {
+  if (!dateStr) return 'No Date';
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? 'Invalid Date' : d.toLocaleDateString();
+};
+
+const formatSafeTime = (dateStr: string) => {
+  if (!dateStr) return '--:--';
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? '--:--' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
 const PatientsTab = () => {
-  const [patients, setPatients] = useState([]);
+  const patients = useLiveQuery(() => db.patients.toArray()) || [];
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [expandedSession, setExpandedSession] = useState<number | null>(null);
-
-  useEffect(() => {
-    getAllPatients().then(setPatients as any);
-  }, []);
 
   const selectPatient = async (id: number) => {
     setLoading(true);
@@ -703,7 +572,7 @@ const PatientsTab = () => {
                 <p className={`font-bold ${selectedPatient?.id === p.id ? 'text-white' : 'text-text-primary'}`}>{p.name}</p>
                 <div className="flex justify-between text-[10px] font-bold text-text-muted uppercase tracking-[0.1em] mt-1">
                   <span>{p.age} Y • {p.gender}</span>
-                  <span>{new Date(p.created_at).toLocaleDateString()}</span>
+                  <span>{formatSafeDate(p.created_at)}</span>
                 </div>
               </div>
             </button>
@@ -753,8 +622,8 @@ const PatientsTab = () => {
                   >
                     <div className="flex items-center gap-8 text-left">
                       <div className="min-w-[100px] border-r border-white/10 pr-6">
-                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">{new Date(s.timestamp).toLocaleDateString()}</p>
-                        <p className="text-xl font-mono font-bold text-white">{new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">{formatSafeDate(s.timestamp)}</p>
+                        <p className="text-xl font-mono font-bold text-white">{formatSafeTime(s.timestamp)}</p>
                       </div>
                       <div>
                         <h4 className="text-xl font-bold text-brand-secondary mb-1">{s.diagnosed_disease}</h4>
@@ -1007,14 +876,14 @@ const SettingsTab = () => {
                 onClick={() => setFormData({ ...formData, [field.key]: formData[field.key] === 'true' ? 'false' : 'true' })}
                 className={`h-16 rounded-2xl px-6 flex items-center justify-between border cursor-pointer transition-all duration-300 ${formData[field.key] === 'true' ? 'bg-brand-success/5 border-brand-success/30' : 'bg-brand-danger/5 border-brand-danger/30'}`}
               >
-                <span className={`font-black uppercase tracking-widest text-[11px] transition-colors ${formData[field.key] === 'true' ? 'text-brand-success' : 'text-brand-danger'}`}>
-                  RFID ({formData[field.key] === 'true' ? 'Enabled' : 'Disabled'})
+                <span className={`font-black uppercase tracking-widest text-[11px] transition-colors ${(formData[field.key] === 'true' || formData[field.key] === undefined) ? 'text-brand-success' : 'text-brand-danger'}`}>
+                  RFID ({(formData[field.key] === 'true' || formData[field.key] === undefined) ? 'Enabled' : 'Disabled'})
                 </span>
                 
                 {/* Sliding Toggle UI */}
-                <div className={`w-14 h-7 rounded-full p-1 relative transition-colors duration-300 ${formData[field.key] === 'true' ? 'bg-brand-success' : 'bg-white/10'}`}>
+                <div className={`w-14 h-7 rounded-full p-1 relative transition-colors duration-300 ${(formData[field.key] === 'true' || formData[field.key] === undefined) ? 'bg-brand-success' : 'bg-white/10'}`}>
                   <motion.div 
-                    animate={{ x: formData[field.key] === 'true' ? 28 : 0 }}
+                    animate={{ x: (formData[field.key] === 'true' || formData[field.key] === undefined) ? 28 : 0 }}
                     transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                     className="w-5 h-5 bg-white rounded-full shadow-lg"
                   />
@@ -1064,7 +933,7 @@ export const AdminDashboardScreen = () => {
   const navigate = useNavigate();
   const { hwStatus } = useAppContext();
   const [activeTab, setActiveTab] = useState<'compartments'|'inventory'|'patients'|'analytics'|'settings'>('compartments');
-  const [inventory, setInventory] = useState([]);
+  const inventory = useLiveQuery(() => db.inventory.toArray()) || [];
   const [serialLog, setSerialLog] = useState<{ timestamp: string; type: 'IN' | 'OUT'; msg: string }[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -1104,7 +973,7 @@ export const AdminDashboardScreen = () => {
           </div>
         </div>
         
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={() => setIsModalOpen(true)}
@@ -1114,17 +983,14 @@ export const AdminDashboardScreen = () => {
                 : 'bg-[rgba(255,179,0,0.1)] text-brand-warning border-brand-warning/30 animate-pulse'
             }`}
           >
-            <Activity size={18} />
-            <span className="text-xs font-bold uppercase tracking-widest whitespace-nowrap">
-              Hardware {hwStatus === 'connected' ? 'Online' : hwStatus === 'connecting' ? 'Connecting...' : 'Offline'}
-              <span className="ml-2 opacity-60 font-medium lowercase">({hwMode})</span>
-            </span>
+            <Activity size={18} className={isHardwareConnected ? '' : 'animate-pulse'} />
+            {isHardwareConnected ? 'Hardware Online' : 'Connect Hardware'}
           </motion.button>
 
           <motion.button 
             whileTap={{ scale: 0.95 }}
             onClick={handleLogout}
-            className="h-12 px-6 bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.1)] text-text-muted border border-white/10 rounded-full text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-all"
+            className="h-12 px-6 bg-[rgba(255,82,82,0.1)] hover:bg-[rgba(255,82,82,0.2)] text-brand-danger border border-brand-danger/30 rounded-full text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-all"
           >
             <LogOut size={16} />
             Logout
@@ -1172,7 +1038,6 @@ export const AdminDashboardScreen = () => {
             {activeTab === 'compartments' && (
               <CompartmentsTab 
                 inventory={inventory} 
-                setInventory={setInventory} 
                 serialLog={serialLog} 
                 setSerialLog={setSerialLog} 
               />
@@ -1180,7 +1045,6 @@ export const AdminDashboardScreen = () => {
             {activeTab === 'inventory' && (
               <InventoryTab 
                 inventory={inventory} 
-                refreshInventory={refreshInventory} 
               />
             )}
             {activeTab === 'patients' && <PatientsTab />}

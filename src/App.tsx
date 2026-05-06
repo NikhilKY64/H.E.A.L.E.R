@@ -50,8 +50,6 @@ const MainLayout = () => {
         <Route path="/admin" element={<AdminLoginScreen />} />
         <Route path="/admin/dashboard" element={<AdminDashboardScreen />} />
       </Routes>
-
-      <SimulationControls />
     </div>
   );
 };
